@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a problem with remotedesk
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - relayd (relay server)
+        - host (machine being controlled)
+        - viewer (controller)
+        - build / release
+        - not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `relayd --version` (or host/viewer).
+      placeholder: remotedesk v0.1.0 (abcdef012345) 2026-01-01 linux/amd64 go1.25.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / desktop environment
+      placeholder: "Ubuntu 24.04 / X11, Windows 11, ..."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste any relevant log output (redact IDs/PINs).
+      render: shell

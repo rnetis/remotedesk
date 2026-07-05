@@ -77,21 +77,26 @@ func Dial(cfg ViewerConfig) (*Stream, error) {
 	return &Stream{Channel: ch, conn: conn}, nil
 }
 
-// LocalForward listens on listenAddr and, for each accepted local connection,
-// opens a fresh tunnel to the host and splices the two — the ssh -L equivalent.
-// This lets any standard VNC viewer connect to listenAddr. It blocks until the
-// listener errors.
+// LocalForward listens on listenAddr and forwards each accepted connection to
+// the host — the ssh -L equivalent, letting any standard VNC viewer connect to
+// listenAddr. It blocks until the listener errors.
 func LocalForward(cfg ViewerConfig, listenAddr string) error {
-	logger := cfg.Logger
-	if logger == nil {
-		logger = log.Default()
-	}
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		return err
 	}
+	return LocalForwardListener(cfg, ln)
+}
+
+// LocalForwardListener is LocalForward against an already-open listener. It
+// closes ln before returning.
+func LocalForwardListener(cfg ViewerConfig, ln net.Listener) error {
+	logger := cfg.Logger
+	if logger == nil {
+		logger = log.Default()
+	}
 	defer ln.Close()
-	logger.Printf("viewer: forwarding %s -> host %s via relay", listenAddr, cfg.ID)
+	logger.Printf("viewer: forwarding %s -> host %s via relay", ln.Addr(), cfg.ID)
 	for {
 		local, err := ln.Accept()
 		if err != nil {
