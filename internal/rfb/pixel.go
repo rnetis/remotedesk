@@ -65,14 +65,21 @@ func (pf *pixelFormat) read(r io.Reader) error {
 
 func (pf pixelFormat) bytesPerPixel() int { return int(pf.bitsPerPixel) / 8 }
 
-// encodeInto appends img's pixels (row-major) to dst in this pixel format. Only
-// true-colour formats are produced; the source is always 8-bit RGBA.
+// encodeInto appends img's whole framebuffer to dst in this pixel format.
 func (pf pixelFormat) encodeInto(dst []byte, img *image.RGBA) []byte {
+	b := img.Bounds()
+	return pf.encodeRectInto(dst, img, 0, 0, b.Dx(), b.Dy())
+}
+
+// encodeRectInto appends the framebuffer-relative rectangle (rx,ry,rw,rh) of img
+// to dst in this pixel format. Only true-colour formats are produced; the source
+// is always 8-bit RGBA.
+func (pf pixelFormat) encodeRectInto(dst []byte, img *image.RGBA, rx, ry, rw, rh int) []byte {
 	bpp := pf.bytesPerPixel()
 	b := img.Bounds()
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		row := img.PixOffset(b.Min.X, y)
-		for x := b.Min.X; x < b.Max.X; x++ {
+	for fy := ry; fy < ry+rh; fy++ {
+		row := img.PixOffset(b.Min.X+rx, b.Min.Y+fy)
+		for fx := rx; fx < rx+rw; fx++ {
 			r := img.Pix[row]
 			g := img.Pix[row+1]
 			bl := img.Pix[row+2]

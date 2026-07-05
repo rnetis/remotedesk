@@ -93,6 +93,9 @@ type session struct {
 	c        io.Closer
 	pf       pixelFormat
 	minFrame time.Duration
+
+	prev *image.RGBA // last frame sent, for dirty-region diffing
+	buf  []byte      // reusable pixel-encoding scratch
 }
 
 func (s *session) handshake() error {
@@ -240,7 +243,7 @@ func (s *session) loop() error {
 					time.Sleep(s.minFrame - d)
 				}
 			}
-			if err := s.sendFramebufferUpdate(); err != nil {
+			if err := s.sendFramebufferUpdate(incremental); err != nil {
 				return err
 			}
 			lastFrame = time.Now()
@@ -289,26 +292,39 @@ func (s *session) readFBUR() (bool, error) {
 	return buf[0] != 0, nil
 }
 
-func (s *session) sendFramebufferUpdate() error {
+func (s *session) sendFramebufferUpdate(incremental bool) error {
 	img, err := s.opts.Screen.Capture()
 	if err != nil {
 		return fmt.Errorf("capture: %w", err)
 	}
 	b := img.Bounds()
-	// Header: type(0), padding(1), num-rectangles(2)=1.
-	if _, err := s.w.Write([]byte{0, 0, 0, 1}); err != nil {
+	w, h := b.Dx(), b.Dy()
+
+	// A full request (or the first frame) sends everything; an incremental
+	// request sends only the tiles that changed since the last frame.
+	var rects []image.Rectangle
+	if !incremental || s.prev == nil {
+		rects = []image.Rectangle{image.Rect(0, 0, w, h)}
+	} else {
+		rects = dirtyRects(s.prev, img)
+	}
+
+	// Header: type(0), padding(1), num-rectangles(2).
+	if _, err := s.w.Write([]byte{0, 0, byte(len(rects) >> 8), byte(len(rects))}); err != nil {
 		return err
 	}
-	// Single Raw rectangle covering the whole framebuffer.
-	if err := binWrite(s.w,
-		uint16(0), uint16(0), uint16(b.Dx()), uint16(b.Dy()), uint32(encodingRaw),
-	); err != nil {
-		return err
+	for _, r := range rects {
+		if err := binWrite(s.w,
+			uint16(r.Min.X), uint16(r.Min.Y), uint16(r.Dx()), uint16(r.Dy()), uint32(encodingRaw),
+		); err != nil {
+			return err
+		}
+		s.buf = s.pf.encodeRectInto(s.buf[:0], img, r.Min.X, r.Min.Y, r.Dx(), r.Dy())
+		if _, err := s.w.Write(s.buf); err != nil {
+			return err
+		}
 	}
-	pixels := s.pf.encodeInto(make([]byte, 0, b.Dx()*b.Dy()*s.pf.bytesPerPixel()), img)
-	if _, err := s.w.Write(pixels); err != nil {
-		return err
-	}
+	s.prev = img
 	return s.w.Flush()
 }
 
