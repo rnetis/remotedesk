@@ -1,0 +1,92 @@
+name: release
+
+# Build binaries for Linux and Windows and publish them to a GitHub Release
+# whenever a version tag (e.g. v1.0.0) is pushed.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.goos }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+          - os: windows-latest
+            goos: windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The host (screen capture, input injection) and viewer (GUI) need CGO and
+      # X11/GL headers on Linux. Windows runners already ship a gcc toolchain.
+      - name: Install Linux build dependencies
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc libc6-dev \
+            libx11-dev libxtst-dev libxkbcommon-dev libxi-dev \
+            libgl1-mesa-dev libxcursor-dev libxinerama-dev libxrandr-dev \
+            libxxf86vm-dev libasound2-dev pkg-config
+
+      - name: Build
+        env:
+          CGO_ENABLED: "1"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: amd64
+        shell: bash
+        run: |
+          mkdir -p dist
+          ext=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          for cmd in relayd host viewer; do
+            go build -ldflags "-s -w" -o "dist/${cmd}${ext}" "./cmd/${cmd}"
+          done
+          cp README.md dist/ 2>/dev/null || true
+
+      - name: Package (Linux)
+        if: matrix.goos == 'linux'
+        shell: bash
+        run: |
+          tar -czf "remotedesk-${{ github.ref_name }}-linux-amd64.tar.gz" -C dist .
+
+      - name: Package (Windows)
+        if: matrix.goos == 'windows'
+        shell: bash
+        run: |
+          cd dist && 7z a "../remotedesk-${{ github.ref_name }}-windows-amd64.zip" ./* >/dev/null
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: remotedesk-${{ matrix.goos }}
+          path: remotedesk-*-amd64.*
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true

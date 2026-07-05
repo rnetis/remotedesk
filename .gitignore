@@ -1,0 +1,11 @@
+# Build output
+/bin/
+/dist/
+
+# Cross-compiled binaries
+*.exe
+
+# Agent key material / local state (never commit secrets)
+*_key
+relay_host_key
+*.pem

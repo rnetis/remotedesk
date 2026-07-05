@@ -1,0 +1,40 @@
+// Command relayd is the remotedesk relay/broker. Run it on a public VPS.
+package main
+
+import (
+	"flag"
+	"log"
+	"net"
+	"path/filepath"
+
+	"remotedesk/internal/config"
+	"remotedesk/internal/relay"
+)
+
+func main() {
+	listen := flag.String("listen", ":7700", "address to listen on")
+	keyPath := flag.String("hostkey", "", "path to relay SSH host key (default: config dir)")
+	flag.Parse()
+
+	if *keyPath == "" {
+		dir, err := config.Dir()
+		if err != nil {
+			log.Fatalf("relayd: config dir: %v", err)
+		}
+		*keyPath = filepath.Join(dir, "relay_host_key")
+	}
+	signer, err := config.LoadOrCreateSigner(*keyPath)
+	if err != nil {
+		log.Fatalf("relayd: host key: %v", err)
+	}
+
+	ln, err := net.Listen("tcp", *listen)
+	if err != nil {
+		log.Fatalf("relayd: listen: %v", err)
+	}
+	log.Printf("relayd: listening on %s", ln.Addr())
+	log.Printf("relayd: host key fingerprint %s", relay.FingerprintSHA256(signer.PublicKey()))
+
+	srv := relay.New(signer, log.Default())
+	log.Fatalf("relayd: %v", srv.Serve(ln))
+}
