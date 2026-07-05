@@ -3,6 +3,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"remotedesk/internal/config"
 	"remotedesk/internal/relay"
+	"remotedesk/internal/version"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -17,7 +19,12 @@ import (
 func main() {
 	listen := flag.String("listen", ":7700", "address to listen on")
 	keyPath := flag.String("hostkey", "", "path to relay SSH host key (default: config dir)")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.String())
+		return
+	}
 
 	if *keyPath == "" {
 		dir, err := config.Dir()

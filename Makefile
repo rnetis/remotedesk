@@ -10,7 +10,9 @@
 
 BIN     := bin
 PKGS    := ./cmd/relayd ./cmd/host ./cmd/viewer
-LDFLAGS := -s -w
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+DATE    := $(shell date -u +%Y-%m-%d)
+LDFLAGS := -s -w -X remotedesk/internal/version.Version=$(VERSION) -X remotedesk/internal/version.Date=$(DATE)
 
 .PHONY: all native linux windows relay test clean
 

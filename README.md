@@ -16,12 +16,17 @@ NAT can connect with no manual port-forwarding.
 
 - **Host** dials *out* to the relay and registers, receiving a connection **ID**
   and one-time **PIN**. It captures the screen and injects input via an embedded
-  RFB server served over the tunnel.
+  RFB server served over the tunnel, and **auto-reconnects** (with backoff) if
+  the relay connection drops.
 - **Viewer** dials the relay, presents the ID + PIN, and the relay splices the
-  two SSH connections together. Any standard VNC client (or the built-in viewer,
-  once Milestone 4 lands) connects through it.
+  two SSH connections together — rendered in a built-in window, or (with
+  `--forward`) exposed as a local port for any standard VNC client.
 - Both hops are SSH-encrypted. The relay only bridges after the host **accepts**
   the incoming session (unless run `--unattended`).
+- Only changed screen tiles are sent on incremental updates (dirty-region
+  diffing), keeping bandwidth low for mostly-static screens.
+
+Run any binary with `--version` to print build info.
 
 ## Status
 

@@ -6,12 +6,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"path/filepath"
 
 	"remotedesk/internal/config"
 	"remotedesk/internal/rfbclient"
 	"remotedesk/internal/tunnel"
+	"remotedesk/internal/version"
 
 	"github.com/hajimehoshi/ebiten/v2"
 )
@@ -24,7 +26,12 @@ func main() {
 	keyPath := flag.String("key", "", "path to agent key (default: config dir)")
 	forward := flag.Bool("forward", false, "expose a local port for an external VNC client instead of the built-in window")
 	listen := flag.String("listen", "127.0.0.1:5901", "local address for --forward mode")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.String())
+		return
+	}
 
 	if *hostID == "" || *pin == "" {
 		log.Fatal("viewer: --id and --pin are required")

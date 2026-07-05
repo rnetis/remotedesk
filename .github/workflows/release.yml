@@ -51,10 +51,11 @@ jobs:
           mkdir -p dist
           ext=""
           if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
+          ldflags="-s -w -X remotedesk/internal/version.Version=${{ github.ref_name }} -X remotedesk/internal/version.Date=$(date -u +%Y-%m-%d)"
           for cmd in relayd host viewer; do
-            go build -ldflags "-s -w" -o "dist/${cmd}${ext}" "./cmd/${cmd}"
+            go build -ldflags "$ldflags" -o "dist/${cmd}${ext}" "./cmd/${cmd}"
           done
-          cp README.md dist/ 2>/dev/null || true
+          cp README.md LICENSE dist/ 2>/dev/null || true
 
       - name: Package (Linux)
         if: matrix.goos == 'linux'

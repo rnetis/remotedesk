@@ -5,10 +5,12 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"path/filepath"
+	"time"
 
 	"remotedesk/internal/capture"
 	"remotedesk/internal/config"
@@ -16,6 +18,7 @@ import (
 	"remotedesk/internal/rfb"
 	"remotedesk/internal/tray"
 	"remotedesk/internal/tunnel"
+	"remotedesk/internal/version"
 )
 
 func main() {
@@ -27,7 +30,12 @@ func main() {
 	vncPassword := flag.String("vnc-password", "", "VNC password for --vnc-listen (default: generated)")
 	noRelay := flag.Bool("no-relay", false, "skip the relay; use with --vnc-listen for local testing")
 	useTray := flag.Bool("tray", false, "show a system-tray UI instead of the console")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println(version.String())
+		return
+	}
 
 	screen, err := capture.Primary()
 	if err != nil {
@@ -84,7 +92,7 @@ func main() {
 		}
 	}
 
-	h, err := tunnel.Connect(tunnel.HostConfig{
+	cfg := tunnel.HostConfig{
 		RelayAddr:  *relayAddr,
 		Signer:     signer,
 		RelayKey:   relayKey,
@@ -92,18 +100,32 @@ func main() {
 		Handler:    handler,
 		OnIncoming: ui.Confirm,
 		Logger:     log.Default(),
-	})
-	if err != nil {
-		log.Fatalf("host: connect: %v", err)
 	}
-	ui.SetIdentity(h.ID, h.PIN)
 
-	// Serve the relay connection in the background; the UI owns the main
-	// goroutine (systray requires this).
-	go func() {
-		log.Fatalf("host: %v", h.Serve())
-	}()
+	// Maintain the relay connection in the background, reconnecting with backoff
+	// if it drops. The UI owns the main goroutine (systray requires this).
+	go serveWithReconnect(cfg, ui)
 	ui.Run()
+}
+
+// serveWithReconnect keeps the host registered with the relay, re-registering
+// after any disconnect with capped exponential backoff.
+func serveWithReconnect(cfg tunnel.HostConfig, ui tray.UI) {
+	const minBackoff, maxBackoff = time.Second, 30 * time.Second
+	backoff := minBackoff
+	for {
+		h, err := tunnel.Connect(cfg)
+		if err != nil {
+			log.Printf("host: connect failed: %v; retrying in %s", err, backoff)
+			time.Sleep(backoff)
+			backoff = min(backoff*2, maxBackoff)
+			continue
+		}
+		backoff = minBackoff
+		ui.SetIdentity(h.ID, h.PIN)
+		err = h.Serve()
+		log.Printf("host: relay connection lost (%v); reconnecting…", err)
+	}
 }
 
 func serveLocal(addr, password string, screen rfb.Screen, sink rfb.Sink) {
