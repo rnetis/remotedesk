@@ -6,9 +6,12 @@ import (
 	"log"
 	"net"
 	"path/filepath"
+	"strings"
 
 	"remotedesk/internal/config"
 	"remotedesk/internal/relay"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func main() {
@@ -34,6 +37,8 @@ func main() {
 	}
 	log.Printf("relayd: listening on %s", ln.Addr())
 	log.Printf("relayd: host key fingerprint %s", relay.FingerprintSHA256(signer.PublicKey()))
+	log.Printf("relayd: pin this on agents with --relay-key:\n%s",
+		strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))))
 
 	srv := relay.New(signer, log.Default())
 	log.Fatalf("relayd: %v", srv.Serve(ln))

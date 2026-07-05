@@ -20,6 +20,7 @@ import (
 
 func main() {
 	relayAddr := flag.String("relay", "127.0.0.1:7700", "relay address")
+	relayKeyFlag := flag.String("relay-key", "", "pin the relay host key (authorized-keys line or file path)")
 	unattended := flag.Bool("unattended", false, "auto-accept incoming viewers")
 	keyPath := flag.String("key", "", "path to agent key (default: config dir)")
 	vncListen := flag.String("vnc-listen", "", "also serve RFB on this local address (e.g. 127.0.0.1:5900)")
@@ -61,6 +62,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("host: key: %v", err)
 	}
+	relayKey, err := config.ParseRelayKey(*relayKeyFlag)
+	if err != nil {
+		log.Fatalf("host: %v", err)
+	}
 
 	// Front-end: a real tray on a desktop, otherwise the console.
 	var ui tray.UI
@@ -82,6 +87,7 @@ func main() {
 	h, err := tunnel.Connect(tunnel.HostConfig{
 		RelayAddr:  *relayAddr,
 		Signer:     signer,
+		RelayKey:   relayKey,
 		Unattended: *unattended,
 		Handler:    handler,
 		OnIncoming: ui.Confirm,

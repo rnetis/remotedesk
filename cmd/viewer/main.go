@@ -18,6 +18,7 @@ import (
 
 func main() {
 	relayAddr := flag.String("relay", "127.0.0.1:7700", "relay address")
+	relayKeyFlag := flag.String("relay-key", "", "pin the relay host key (authorized-keys line or file path)")
 	hostID := flag.String("id", "", "host connection ID")
 	pin := flag.String("pin", "", "session PIN")
 	keyPath := flag.String("key", "", "path to agent key (default: config dir)")
@@ -39,10 +40,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("viewer: key: %v", err)
 	}
+	relayKey, err := config.ParseRelayKey(*relayKeyFlag)
+	if err != nil {
+		log.Fatalf("viewer: %v", err)
+	}
 
 	cfg := tunnel.ViewerConfig{
 		RelayAddr: *relayAddr,
 		Signer:    signer,
+		RelayKey:  relayKey,
 		ID:        *hostID,
 		PIN:       *pin,
 		Logger:    log.Default(),

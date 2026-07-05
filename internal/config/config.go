@@ -7,11 +7,36 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"remotedesk/internal/wire"
 
 	"golang.org/x/crypto/ssh"
 )
+
+// ParseRelayKey resolves a pinned relay host key from a flag value. The value
+// may be an inline authorized-keys line ("ssh-ed25519 AAAA...") or a path to a
+// file containing one. An empty value returns (nil, nil) — no pinning.
+func ParseRelayKey(value string) (ssh.PublicKey, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	data := []byte(value)
+	if !strings.HasPrefix(value, "ssh-") && !strings.HasPrefix(value, "ecdsa-") {
+		// Treat it as a path.
+		b, err := os.ReadFile(value)
+		if err != nil {
+			return nil, fmt.Errorf("read relay key %s: %w", value, err)
+		}
+		data = b
+	}
+	key, _, _, _, err := ssh.ParseAuthorizedKey(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse relay key: %w", err)
+	}
+	return key, nil
+}
 
 // Dir returns (and creates) the remotedesk config directory.
 func Dir() (string, error) {

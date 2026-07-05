@@ -1,5 +1,10 @@
 # remotedesk
 
+[![ci](https://github.com/rnetis/remotedesk/actions/workflows/ci.yml/badge.svg)](https://github.com/rnetis/remotedesk/actions/workflows/ci.yml)
+[![release](https://github.com/rnetis/remotedesk/actions/workflows/release.yml/badge.svg)](https://github.com/rnetis/remotedesk/releases)
+[![go](https://img.shields.io/badge/go-1.25-00ADD8?logo=go)](go.mod)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 A cross-platform AnyDesk/TeamViewer-style remote desktop tool in Go. It pairs an
 embedded VNC (RFB) server with a self-hosted **SSH relay** so two machines behind
 NAT can connect with no manual port-forwarding.
@@ -80,12 +85,20 @@ Or expose a local port for an external VNC client instead:
 
 ## Security notes
 
+- **Pin the relay host key.** `relayd` prints its key on startup; pass it to the
+  agents so a man-in-the-middle can't impersonate the relay:
+
+  ```sh
+  ./host   --relay RELAY_IP:7700 --relay-key "ssh-ed25519 AAAA..."
+  ./viewer --relay RELAY_IP:7700 --relay-key ./relay.pub --id ... --pin ...
+  ```
+
+  The flag accepts an inline authorized-keys line or a file path. Without it,
+  connections still work but log a warning that the relay is unauthenticated.
+- Access is gated by the one-time PIN **and** an explicit host Accept prompt.
 - The relay terminates both SSH hops, so it can see plaintext VNC — the trust
   model is "you own the relay" (same as TeamViewer's relays). An in-tunnel TLS
-  layer for true end-to-end encryption is a planned hardening step.
-- Access is gated by the one-time PIN **and** an explicit host Accept prompt.
-- Pin the relay host key on the agents (`--relay-key`, planned flag) in
-  production; unpinned connections log a warning.
+  layer for true end-to-end encryption is the next planned hardening step.
 
 ## Layout
 
