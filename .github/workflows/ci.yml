@@ -23,11 +23,19 @@ jobs:
             libgl1-mesa-dev libxcursor-dev libxinerama-dev libxrandr-dev \
             libxxf86vm-dev libasound2-dev pkg-config
 
+      - name: Formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"; echo "$unformatted"
+            exit 1
+          fi
+
       - name: Vet
         run: go vet ./...
 
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
 
       - name: Build
         run: go build ./...

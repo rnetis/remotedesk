@@ -1,0 +1,46 @@
+# systemd unit for the remotedesk relay.
+#
+# Install:
+#   sudo install -m0755 relayd /usr/local/bin/relayd
+#   sudo install -m0644 deploy/remotedesk-relay.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now remotedesk-relay
+#
+# The relay host key is created on first start under the StateDirectory
+# (/var/lib/remotedesk) and reused afterwards, so its fingerprint stays stable
+# for agents that pin it with --relay-key. View it with:
+#   sudo journalctl -u remotedesk-relay | grep 'pin this'
+
+[Unit]
+Description=remotedesk relay
+Documentation=https://github.com/rnetis/remotedesk
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/relayd --listen :7700 --hostkey /var/lib/remotedesk/relay_host_key
+Restart=on-failure
+RestartSec=5
+
+# Run as an isolated, unprivileged, system-managed user with its own state dir.
+DynamicUser=yes
+StateDirectory=remotedesk
+
+# Sandboxing: the relay only needs the network and its state directory.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

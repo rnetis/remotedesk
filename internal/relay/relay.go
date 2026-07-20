@@ -27,6 +27,37 @@ import (
 // acceptTimeout bounds how long a viewer waits for the host to accept/reject.
 const acceptTimeout = 60 * time.Second
 
+// Defaults for the hardening knobs in Options.
+const (
+	defaultMaxPINAttempts   = 5
+	defaultLockout          = 30 * time.Second
+	defaultHandshakeTimeout = 15 * time.Second
+	defaultMaxConns         = 512
+)
+
+// Options configures a relay Server. The zero value of each field falls back to
+// a sensible default, so callers can set only what they care about.
+type Options struct {
+	// Signer is the relay's SSH host key. Required.
+	Signer ssh.Signer
+	// Logger receives operational logs. Defaults to log.Default().
+	Logger *log.Logger
+	// Authorize decides whether an agent's public key may connect. When nil,
+	// any key is allowed (fine for a private relay you own). Set it to an
+	// allowlist to restrict which agents can reach the relay.
+	Authorize func(ssh.PublicKey) bool
+	// MaxPINAttempts is how many wrong PINs a host registration tolerates before
+	// further connection attempts to it are locked out for LockoutDuration.
+	MaxPINAttempts int
+	// LockoutDuration is how long a host is protected after too many bad PINs.
+	LockoutDuration time.Duration
+	// HandshakeTimeout bounds the SSH handshake and the wait for a peer's first
+	// channel, so a slow client cannot tie up a connection indefinitely.
+	HandshakeTimeout time.Duration
+	// MaxConns caps concurrent connections the relay will service at once.
+	MaxConns int
+}
+
 // Server is the relay broker.
 type Server struct {
 	signer ssh.Signer
@@ -35,6 +66,11 @@ type Server struct {
 	// authorize decides whether an agent's public key may connect. When nil,
 	// any key is allowed (fine for a private relay you own; tighten later).
 	authorize func(ssh.PublicKey) bool
+
+	maxPINAttempts   int
+	lockout          time.Duration
+	handshakeTimeout time.Duration
+	sem              chan struct{} // bounds concurrent connections
 
 	mu    sync.Mutex
 	hosts map[string]*hostReg // id -> registered host
@@ -53,28 +89,87 @@ type hostReg struct {
 
 	pendMu  sync.Mutex
 	pending map[string]chan bool // session -> accept result
+
+	// Brute-force protection for the connection PIN.
+	attemptMu sync.Mutex
+	failures  int
+	lockUntil time.Time
 }
 
-// New returns a relay Server that presents signer as its SSH host key.
+// New returns a relay Server that presents signer as its SSH host key, using
+// default hardening options.
 func New(signer ssh.Signer, logger *log.Logger) *Server {
-	if logger == nil {
-		logger = log.Default()
+	return NewWithOptions(Options{Signer: signer, Logger: logger})
+}
+
+// NewWithOptions returns a relay Server configured by opts.
+func NewWithOptions(opts Options) *Server {
+	if opts.Logger == nil {
+		opts.Logger = log.Default()
+	}
+	if opts.MaxPINAttempts <= 0 {
+		opts.MaxPINAttempts = defaultMaxPINAttempts
+	}
+	if opts.LockoutDuration <= 0 {
+		opts.LockoutDuration = defaultLockout
+	}
+	if opts.HandshakeTimeout <= 0 {
+		opts.HandshakeTimeout = defaultHandshakeTimeout
+	}
+	if opts.MaxConns <= 0 {
+		opts.MaxConns = defaultMaxConns
 	}
 	return &Server{
-		signer: signer,
-		log:    logger,
-		hosts:  make(map[string]*hostReg),
+		signer:           opts.Signer,
+		log:              opts.Logger,
+		authorize:        opts.Authorize,
+		maxPINAttempts:   opts.MaxPINAttempts,
+		lockout:          opts.LockoutDuration,
+		handshakeTimeout: opts.HandshakeTimeout,
+		sem:              make(chan struct{}, opts.MaxConns),
+		hosts:            make(map[string]*hostReg),
 	}
 }
 
-// Serve accepts connections on ln until it errors or is closed.
+// Serve accepts connections on ln until the listener is closed. Closing ln (see
+// graceful shutdown in cmd/relayd) makes Serve return nil. Transient accept
+// errors are retried with capped backoff rather than bringing the relay down.
 func (s *Server) Serve(ln net.Listener) error {
+	var tempDelay time.Duration
 	for {
 		c, err := ln.Accept()
 		if err != nil {
-			return err
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
+			// Back off on transient errors (e.g. fd exhaustion) instead of
+			// spinning or dying.
+			if tempDelay == 0 {
+				tempDelay = 5 * time.Millisecond
+			} else {
+				tempDelay *= 2
+			}
+			if tempDelay > time.Second {
+				tempDelay = time.Second
+			}
+			s.log.Printf("relay: accept error: %v; retrying in %s", err, tempDelay)
+			time.Sleep(tempDelay)
+			continue
 		}
-		go s.handleConn(c)
+		tempDelay = 0
+
+		// Cap concurrency: drop new connections once saturated so a flood cannot
+		// exhaust memory/goroutines.
+		select {
+		case s.sem <- struct{}{}:
+			go func() {
+				defer func() { <-s.sem }()
+				s.handleConn(c)
+			}()
+		default:
+			s.log.Printf("relay: connection limit reached, dropping %s", c.RemoteAddr())
+			c.Close()
+		}
 	}
 }
 
@@ -95,6 +190,10 @@ func (s *Server) serverConfig() *ssh.ServerConfig {
 
 func (s *Server) handleConn(nc net.Conn) {
 	defer nc.Close()
+
+	// Bound the handshake and the wait for the peer's first channel so a
+	// slow-loris client cannot hold a connection open doing nothing.
+	nc.SetDeadline(time.Now().Add(s.handshakeTimeout))
 	sconn, chans, reqs, err := ssh.NewServerConn(nc, s.serverConfig())
 	if err != nil {
 		s.log.Printf("relay: handshake from %s failed: %v", nc.RemoteAddr(), err)
@@ -109,8 +208,15 @@ func (s *Server) handleConn(nc net.Conn) {
 	}
 
 	// A connection is classified by the first channel it opens: a host opens a
-	// control channel; a viewer opens a connect channel.
+	// control channel; a viewer opens a connect channel. Once a legitimate peer
+	// has opened its first channel, clear the deadline: host control channels are
+	// long-lived and idle by design, and viewer data flows on their own timing.
+	first := true
 	for newCh := range chans {
+		if first {
+			nc.SetDeadline(time.Time{})
+			first = false
+		}
 		switch newCh.ChannelType() {
 		case wire.ChanControl:
 			s.serveControl(sconn, fp, newCh)
@@ -195,6 +301,39 @@ func (s *Server) lookup(hostID string) *hostReg {
 	return s.hosts[hostID]
 }
 
+// authResult is the outcome of checking a viewer's PIN against a host.
+type authResult int
+
+const (
+	authOK     authResult = iota // PIN correct
+	authBadPIN                   // PIN wrong, host not (yet) locked
+	authLocked                   // host is locked out; attempt refused without checking
+)
+
+// authenticate validates pin against reg's current PIN with brute-force
+// protection. Wrong PINs accrue toward a lockout; while locked, every attempt
+// (right or wrong) is refused. justLocked is true only on the attempt that trips
+// the lockout, so the caller can notify the host exactly once per lockout.
+func (s *Server) authenticate(reg *hostReg, pin string) (res authResult, justLocked bool) {
+	reg.attemptMu.Lock()
+	defer reg.attemptMu.Unlock()
+
+	if time.Now().Before(reg.lockUntil) {
+		return authLocked, false
+	}
+	if subtle.ConstantTimeCompare([]byte(pin), []byte(reg.pin)) == 1 {
+		reg.failures = 0
+		return authOK, false
+	}
+	reg.failures++
+	if reg.failures >= s.maxPINAttempts {
+		reg.failures = 0
+		reg.lockUntil = time.Now().Add(s.lockout)
+		return authLocked, true
+	}
+	return authBadPIN, false
+}
+
 // serveConnect handles a viewer's connect request end-to-end: validate, get the
 // host's consent, then splice the viewer channel to a fresh host data channel.
 func (s *Server) serveConnect(newCh ssh.NewChannel) {
@@ -209,7 +348,20 @@ func (s *Server) serveConnect(newCh ssh.NewChannel) {
 		newCh.Reject(ssh.ConnectionFailed, "no such host online")
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(req.PIN), []byte(reg.pin)) != 1 {
+	switch res, justLocked := s.authenticate(reg, req.PIN); res {
+	case authOK:
+		// proceed
+	case authLocked:
+		if justLocked {
+			s.log.Printf("relay: host %s locked out after %d bad PINs", reg.id, s.maxPINAttempts)
+			_ = reg.send(wire.ControlMsg{
+				Op:    wire.OpAlert,
+				Error: "multiple failed connection attempts detected; new attempts are temporarily blocked",
+			})
+		}
+		newCh.Reject(ssh.Prohibited, "too many attempts; try again later")
+		return
+	default: // authBadPIN
 		newCh.Reject(ssh.Prohibited, "invalid PIN")
 		return
 	}

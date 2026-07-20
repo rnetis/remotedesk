@@ -100,10 +100,24 @@ Or expose a local port for an external VNC client instead:
 
   The flag accepts an inline authorized-keys line or a file path. Without it,
   connections still work but log a warning that the relay is unauthenticated.
-- Access is gated by the one-time PIN **and** an explicit host Accept prompt.
+- Access is gated by the session PIN **and** an explicit host Accept prompt.
+- **Brute-force protection.** The relay locks out a host after a few wrong PINs
+  (`--pin-attempts`, default 5) for a cooldown window (`--lockout`, default 30s)
+  and alerts the host, so the 6-digit PIN can't be guessed at speed. Slow-loris
+  clients are dropped by a handshake deadline (`--handshake-timeout`), and
+  concurrent connections are capped (`--max-conns`).
+- **Restrict who can connect.** For a private relay, pass `--authorized-keys` to
+  allow only agents whose public key you've listed (see [deploy/](deploy/)).
 - The relay terminates both SSH hops, so it can see plaintext VNC — the trust
   model is "you own the relay" (same as TeamViewer's relays). An in-tunnel TLS
   layer for true end-to-end encryption is the next planned hardening step.
+
+## Deploy the relay
+
+The relay is pure Go and runs unattended on a public host. See
+[deploy/](deploy/) for a hardened **systemd** unit, a **Docker** image, and the
+full hardening reference. It handles `SIGTERM`/`SIGINT` for clean shutdown under
+either.
 
 ## Layout
 

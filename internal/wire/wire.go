@@ -35,6 +35,7 @@ const (
 	OpIncoming   = "incoming"   // relay -> host: a viewer wants to connect
 	OpAccept     = "accept"     // host -> relay: allow the pending viewer
 	OpReject     = "reject"     // host -> relay: deny the pending viewer
+	OpAlert      = "alert"      // relay -> host: security-relevant notice (Error carries the text)
 	OpError      = "error"      // relay -> host: something went wrong
 )
 
