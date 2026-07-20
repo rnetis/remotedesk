@@ -19,9 +19,15 @@ You can expect an initial response within a few days.
 - **Pin the relay host key.** Pass `--relay-key` to the host and viewer with the
   key `relayd` prints on startup. Without pinning, agents log a warning and are
   vulnerable to a man-in-the-middle impersonating the relay.
-- **Access control** is a one-time PIN plus an explicit host Accept prompt. Do
+- **Access control** is a session PIN plus an explicit host Accept prompt. Do
   not use `--unattended` on machines where any inbound connection with the ID
   should not be trusted.
+- **Brute-force protection.** The relay locks a host out after repeated wrong
+  PINs (`--pin-attempts`, default 5) for a cooldown (`--lockout`, default 30s)
+  and pushes an alert to the host, so the PIN cannot be guessed at speed.
+  Handshakes have a deadline (`--handshake-timeout`) and concurrent connections
+  are capped (`--max-conns`) to blunt DoS. For a private relay, restrict which
+  keys may connect with `--authorized-keys`.
 - **Key material** (agent keys, relay host key) is stored `0600` under the OS
   config dir. Do not commit these; `.gitignore` excludes `*_key` and `*.pem`.
 

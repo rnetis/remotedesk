@@ -28,6 +28,10 @@ type HostConfig struct {
 	// viewer is bridged. Returning false rejects. If nil, consent is granted.
 	OnIncoming func(session string) bool
 
+	// OnAlert, if set, is called with security-relevant notices pushed by the
+	// relay (e.g. a brute-force lockout). If nil, alerts are logged.
+	OnAlert func(msg string)
+
 	Logger *log.Logger
 }
 
@@ -111,7 +115,8 @@ func (h *Host) Serve() error {
 		if err := h.dec.Decode(&msg); err != nil {
 			return err
 		}
-		if msg.Op == wire.OpIncoming {
+		switch msg.Op {
+		case wire.OpIncoming:
 			ok := true
 			if !h.cfg.Unattended && h.cfg.OnIncoming != nil {
 				ok = h.cfg.OnIncoming(msg.Session)
@@ -122,6 +127,12 @@ func (h *Host) Serve() error {
 			}
 			if err := h.enc.Encode(wire.ControlMsg{Op: reply, Session: msg.Session}); err != nil {
 				return err
+			}
+		case wire.OpAlert:
+			if h.cfg.OnAlert != nil {
+				h.cfg.OnAlert(msg.Error)
+			} else {
+				h.log.Printf("host: relay alert: %s", msg.Error)
 			}
 		}
 	}
