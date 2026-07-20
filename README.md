@@ -114,10 +114,18 @@ Or expose a local port for an external VNC client instead:
 
 ## Deploy the relay
 
-The relay is pure Go and runs unattended on a public host. See
-[deploy/](deploy/) for a hardened **systemd** unit, a **Docker** image, and the
-full hardening reference. It handles `SIGTERM`/`SIGINT` for clean shutdown under
-either.
+The relay is pure Go and runs unattended on a public host. Pull the prebuilt,
+multi-arch image (no local build needed) — `:edge` tracks `main`, and `:latest`
+/ `:X.Y.Z` are published once release tags are cut:
+
+```sh
+docker run -d -p 7700:7700 -v remotedesk-relay:/data \
+  ghcr.io/rnetis/remotedesk-relay:edge
+```
+
+See [deploy/](deploy/) for a hardened **systemd** unit, the **Docker** details,
+and the full hardening reference. `relayd` handles `SIGTERM`/`SIGINT` for clean
+shutdown under either.
 
 ## Layout
 

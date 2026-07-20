@@ -36,17 +36,30 @@ etc.) and stores the host key under `/var/lib/remotedesk`.
 
 ## Option B — Docker
 
-```sh
-docker build -f deploy/Dockerfile -t remotedesk-relay .
+Prebuilt multi-arch (amd64/arm64) images are published to GHCR on every push to
+`main` (`:edge`) and on release tags (`:X.Y.Z` and `:latest`), so you don't have
+to build locally:
 
+```sh
 docker run -d --name relay --restart unless-stopped \
   -p 7700:7700 -v remotedesk-relay:/data \
-  remotedesk-relay
+  ghcr.io/rnetis/remotedesk-relay:edge     # :latest / :X.Y.Z once a release is tagged
 
-docker logs relay | grep -A1 'pin this'   # host-key line to pin on agents
+docker logs relay | grep -A1 'pin this'    # host-key line to pin on agents
 ```
 
 The named volume keeps the host key stable across container restarts.
+
+To build the image yourself instead of pulling:
+
+```sh
+docker build -f deploy/Dockerfile -t remotedesk-relay .
+```
+
+> **Publishing note:** GHCR packages start **private**. After the first
+> `docker` workflow run, make `remotedesk-relay` public under the repo owner's
+> *Packages* settings if you want anonymous `docker pull` (or authenticate with a
+> token that has `read:packages`).
 
 ## Hardening flags
 
