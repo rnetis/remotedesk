@@ -4,7 +4,12 @@
 # that runs unattended on a public host. The host agent and viewer need a
 # desktop session and are distributed as native binaries instead.
 #
-# Build from the repository root:
+# Prebuilt multi-arch (amd64/arm64) images are published to GHCR by
+# .github/workflows/docker.yml — pull instead of building (:edge tracks main,
+# :latest / :X.Y.Z once a release is tagged):
+#   docker pull ghcr.io/rnetis/remotedesk-relay:edge
+#
+# Or build locally from the repository root:
 #   docker build -f deploy/Dockerfile -t remotedesk-relay .
 #
 # Run, persisting the relay host key so its fingerprint is stable across
@@ -17,13 +22,19 @@
 # relayd can create its host key on first start. (A bind mount instead of a
 # named volume must be chowned to 65532 on the host.)
 
-FROM golang:1.25 AS build
+# The build stage runs on the native builder platform and cross-compiles to the
+# target platform (Go makes this cheap and CGO is off), so multi-arch builds
+# need no emulation. TARGETOS/TARGETARCH are provided by BuildKit; they are
+# empty on the legacy builder, which harmlessly yields a native build.
+FROM --platform=$BUILDPLATFORM golang:1.25 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=docker
-RUN CGO_ENABLED=0 go build \
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
     -ldflags "-s -w -X remotedesk/internal/version.Version=${VERSION}" \
     -o /out/relayd ./cmd/relayd
 # Staging dir copied into the final image with nonroot ownership below.
