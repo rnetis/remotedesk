@@ -39,7 +39,8 @@ jobs:
             gcc libc6-dev \
             libx11-dev libxtst-dev libxkbcommon-dev libxi-dev \
             libgl1-mesa-dev libxcursor-dev libxinerama-dev libxrandr-dev \
-            libxxf86vm-dev libasound2-dev pkg-config
+            libxxf86vm-dev libasound2-dev pkg-config \
+            libwayland-dev wayland-protocols libegl-dev libgles-dev
 
       - name: Build
         env:
@@ -52,8 +53,10 @@ jobs:
           ext=""
           if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
           ldflags="-s -w -X remotedesk/internal/version.Version=${{ github.ref_name }} -X remotedesk/internal/version.Date=$(date -u +%Y-%m-%d)"
-          for cmd in relayd host viewer; do
-            go build -ldflags "$ldflags" -o "dist/${cmd}${ext}" "./cmd/${cmd}"
+          # migrated_fynedo opts the unified GUI into Fyne's fyne.Do threading
+          # model; it's a no-op for the non-Fyne binaries.
+          for cmd in relayd host viewer remotedesk; do
+            go build -tags migrated_fynedo -ldflags "$ldflags" -o "dist/${cmd}${ext}" "./cmd/${cmd}"
           done
           cp README.md LICENSE dist/ 2>/dev/null || true
 

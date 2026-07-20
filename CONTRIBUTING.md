@@ -11,8 +11,11 @@ Requires Go 1.25+, a C toolchain, and (on Linux) X11/GL headers:
 sudo apt-get install -y gcc libc6-dev \
   libx11-dev libxtst-dev libxkbcommon-dev libxi-dev \
   libgl1-mesa-dev libxcursor-dev libxinerama-dev libxrandr-dev \
-  libxxf86vm-dev libasound2-dev pkg-config
+  libxxf86vm-dev libasound2-dev pkg-config \
+  libwayland-dev wayland-protocols libegl-dev libgles-dev
 ```
+
+The last line (Wayland/EGL) is needed by the Fyne GUI in `cmd/remotedesk`.
 
 Build and test:
 
@@ -34,7 +37,8 @@ make windows  # cross-compile (needs gcc-mingw-w64-x86-64)
 
 | Path | Responsibility |
 |------|----------------|
-| `cmd/{relayd,host,viewer}` | the three binaries |
+| `cmd/{relayd,host,viewer}` | the relay and standalone host/viewer CLIs |
+| `cmd/remotedesk` | unified host+viewer desktop app (Fyne GUI) |
 | `internal/relay` | SSH broker, ID/PIN registry, consent bridging |
 | `internal/rfb` | RFB 3.8 server (handshake, auth, encodings, diffing) |
 | `internal/rfbclient` | RFB client decoder used by the built-in viewer |

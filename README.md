@@ -26,6 +26,11 @@ NAT can connect with no manual port-forwarding.
 - Only changed screen tiles are sent on incremental updates (dirty-region
   diffing), keeping bandwidth low for mostly-static screens.
 
+The **`remotedesk` desktop app** rolls host and viewer into one GUI (like
+AnyDesk): one window shows this machine's ID/PIN so it can be controlled, and a
+form lets you enter a remote ID/PIN to control another machine. The standalone
+`host` and `viewer` CLIs remain for headless and scripted use.
+
 Run any binary with `--version` to print build info.
 
 ## Status
@@ -40,11 +45,17 @@ Run any binary with `--version` to print build info.
 
 ## Build
 
-Requires Go 1.23+, a C toolchain, and (Linux) X11 dev headers:
-`libx11-dev libxtst-dev libxkbcommon-dev libxi-dev`.
+Requires Go 1.23+, a C toolchain, and (Linux) X11/GL + Wayland dev headers:
 
 ```sh
-make            # native build into bin/
+sudo apt-get install -y gcc libc6-dev \
+  libx11-dev libxtst-dev libxkbcommon-dev libxi-dev \
+  libgl1-mesa-dev libxcursor-dev libxinerama-dev libxrandr-dev libxxf86vm-dev \
+  libwayland-dev wayland-protocols libegl-dev libgles-dev libasound2-dev pkg-config
+```
+
+```sh
+make            # native build into bin/ (relayd, host, viewer, remotedesk)
 make test       # run the test suite
 ```
 
@@ -53,12 +64,13 @@ make test       # run the test suite
 Requires the mingw-w64 toolchain: `apt install gcc-mingw-w64-x86-64`.
 
 ```sh
-make windows    # -> bin/windows/{relayd,host,viewer}.exe
+make windows    # -> bin/windows/{relayd,host,viewer,remotedesk}.exe
 ```
 
-The relay is pure Go (`CGO_ENABLED=0`); `host.exe` and `viewer.exe` are built
-with CGO via `x86_64-w64-mingw32-gcc` for screen capture, input injection, the
-tray, and the GUI. They are linked `-H windowsgui` so no console window appears.
+The relay is pure Go (`CGO_ENABLED=0`); `host.exe`, `viewer.exe`, and
+`remotedesk.exe` are built with CGO via `x86_64-w64-mingw32-gcc` for screen
+capture, input injection, the tray, and the GUI. They are linked `-H windowsgui`
+so no console window appears.
 
 ## Run
 
@@ -68,14 +80,29 @@ On your public VPS:
 ./relayd --listen :7700
 ```
 
-On the machine to be controlled (note its ID/PIN, and pin the relay host key):
+### Desktop app (host + viewer in one)
+
+The simplest way to use remotedesk. Launch it on each machine:
+
+```sh
+./remotedesk --relay RELAY_IP:7700 --relay-key "ssh-ed25519 AAAA..."
+```
+
+The window shows **this** machine's ID and PIN (share them to let someone in),
+and has a **Connect to a remote computer** form — type the other machine's ID +
+PIN and hit Connect to control it. Incoming requests pop up an Accept/Reject
+prompt. Pass `--unattended` to auto-accept.
+
+### Standalone CLIs (headless / scripted)
+
+Run the machine to be controlled as a console or tray agent:
 
 ```sh
 ./host --relay RELAY_IP:7700          # console UI, prompts to accept
 ./host --relay RELAY_IP:7700 --tray   # system-tray UI
 ```
 
-On the controller (built-in window — no external VNC client needed):
+Connect from the standalone viewer (built-in window — no external VNC client):
 
 ```sh
 ./viewer --relay RELAY_IP:7700 --id 314-798-609 --pin 058367
@@ -129,7 +156,8 @@ shutdown under either.
 
 ## Layout
 
-- `cmd/{relayd,host,viewer}` — the three binaries.
+- `cmd/{relayd,host,viewer}` — the relay and the standalone host/viewer CLIs.
+- `cmd/remotedesk` — the unified host+viewer desktop app (Fyne GUI).
 - `internal/relay` — SSH broker, ID/PIN registry, consent bridging.
 - `internal/rfb` — RFB 3.8 server (handshake, VNC auth, Raw encoding).
 - `internal/capture` / `internal/input` — screen capture / input injection.

@@ -21,7 +21,8 @@ jobs:
             gcc libc6-dev \
             libx11-dev libxtst-dev libxkbcommon-dev libxi-dev \
             libgl1-mesa-dev libxcursor-dev libxinerama-dev libxrandr-dev \
-            libxxf86vm-dev libasound2-dev pkg-config
+            libxxf86vm-dev libasound2-dev pkg-config \
+            libwayland-dev wayland-protocols libegl-dev libgles-dev
 
       - name: Formatting
         run: |

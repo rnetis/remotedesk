@@ -2,6 +2,12 @@
 /bin/
 /dist/
 
+# Stray binaries from `go build ./cmd/...` without -o in the repo root
+/relayd
+/host
+/viewer
+/remotedesk
+
 # Cross-compiled binaries
 *.exe
 
